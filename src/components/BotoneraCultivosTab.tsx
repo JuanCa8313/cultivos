@@ -2,14 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { dbCultivos, emitCultivosUpdated, type ParcelaCultivo } from '../lib/db';
-import { Scissors, ShoppingBag, Sprout, Receipt, Check, X, Sparkles } from 'lucide-react';
+import { Scissors, ShoppingBag, Sprout, Receipt, Check, X, Sparkles, MessageCircle, Trash2 } from 'lucide-react';
 import { formatCOP } from '../lib/utils';
+import type { VentaCosecha } from '../lib/db';
 
 export function BotoneraCultivosTab() {
   const [parcelas, setParcelas] = useState<ParcelaCultivo[]>([]);
   const [selectedParcelaId, setSelectedParcelaId] = useState<string>('par-cilantro');
   const [modalType, setModalType] = useState<'cosecha' | 'venta' | 'abono' | 'gasto' | null>(null);
   const [mensajeExito, setMensajeExito] = useState<string | null>(null);
+  const [ventasRecientes, setVentasRecientes] = useState<VentaCosecha[]>([]);
+  const [ultimaVenta, setUltimaVenta] = useState<VentaCosecha | null>(null);
 
   // Cosecha
   const [kgCosecha, setKgCosecha] = useState<number>(8); // Por defecto 8 kg listos de cilantro
@@ -30,6 +33,8 @@ export function BotoneraCultivosTab() {
   const cargarParcelas = async () => {
     const list = await dbCultivos.parcelas.where('activo').equals(1).toArray();
     setParcelas(list);
+    const listVentas = await dbCultivos.ventas.reverse().limit(5).toArray();
+    setVentasRecientes(listVentas);
   };
 
   useEffect(() => {
@@ -52,6 +57,7 @@ export function BotoneraCultivosTab() {
       calidad: 'primera',
       createdAt: new Date().toISOString(),
     });
+    await cargarParcelas();
     setModalType(null);
     notificar(`¡Cosecha registrada! ${kgCosecha} kg recolectados con éxito.`);
   };
@@ -59,7 +65,7 @@ export function BotoneraCultivosTab() {
   const handleGuardarVenta = async () => {
     if (!selectedParcelaId) return;
     const total = Math.round(kgVenta * precioKgVenta);
-    await dbCultivos.ventas.add({
+    const nuevaVenta: VentaCosecha = {
       id: 'vencos-' + Date.now(),
       parcelaId: selectedParcelaId,
       fecha: new Date().toISOString().split('T')[0],
@@ -69,9 +75,37 @@ export function BotoneraCultivosTab() {
       metodoPago: metodoPagoVenta,
       clienteNombre: clienteVenta,
       createdAt: new Date().toISOString(),
-    });
+    };
+    await dbCultivos.ventas.add(nuevaVenta);
+    setUltimaVenta(nuevaVenta);
+    await cargarParcelas();
     setModalType(null);
     notificar(`¡Venta registrada! ${kgVenta} kg por ${formatCOP(total)} a ${clienteVenta}`);
+  };
+
+  const handleEliminarVenta = async (venta: VentaCosecha) => {
+    if (!confirm(`¿Deseas anular la venta de ${venta.cantidadKg} kg a ${venta.clienteNombre}?`)) return;
+    await dbCultivos.ventas.delete(venta.id);
+    if (ultimaVenta?.id === venta.id) {
+      setUltimaVenta(null);
+    }
+    await cargarParcelas();
+    notificar('Venta de cosecha anulada con éxito.');
+  };
+
+  const compartirReciboWhatsApp = (venta: VentaCosecha) => {
+    const texto = `🌱 *Comprobante de Entrega Agrícola - Granja SomosGranja*\n\n` +
+      `🏪 Cliente: *${venta.clienteNombre}*\n` +
+      `📅 Fecha: ${venta.fecha}\n` +
+      `🌿 Producto: Cosecha Fresca de Huerta (Cilantro / Hortaliza)\n` +
+      `⚖️ Peso: *${venta.cantidadKg} kg*\n` +
+      `💵 Precio/kg: ${formatCOP(venta.precioPorKg)}\n` +
+      `💰 Total: *${formatCOP(venta.totalCop)}*\n` +
+      `💳 Pago: *${venta.metodoPago.toUpperCase()}*\n\n` +
+      `¡Cosechado fresco a 2.200 msnm con manejo orgánico! Gracias por apoyar el campo local. 🌾`;
+
+    const url = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+    window.open(url, '_blank');
   };
 
   const handleGuardarAbono = async () => {
@@ -191,6 +225,73 @@ export function BotoneraCultivosTab() {
           <span className="text-[10px] text-slate-500">Jornales, semillas</span>
         </button>
       </div>
+
+      {/* Recibo Rápido de Última Venta de Cosecha */}
+      {ultimaVenta && (
+        <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-3.5 mb-5 shadow-sm flex items-center justify-between">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 block">
+              ✅ Cosecha Entregada a {ultimaVenta.clienteNombre}
+            </span>
+            <span className="text-sm font-black text-slate-800 block">
+              {ultimaVenta.cantidadKg} kg de cilantro • {formatCOP(ultimaVenta.totalCop)}
+            </span>
+            <span className="text-[10px] text-slate-500 capitalize">Pago: {ultimaVenta.metodoPago}</span>
+          </div>
+
+          <button
+            onClick={() => compartirReciboWhatsApp(ultimaVenta)}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2 px-3 rounded-xl shadow-md text-xs flex items-center gap-1.5 active:scale-95 transition-all"
+          >
+            <MessageCircle className="w-4 h-4 fill-white" />
+            <span>Recibo WA</span>
+          </button>
+        </div>
+      )}
+
+      {/* Historial de Ventas Recientes de la Huerta */}
+      {ventasRecientes.length > 0 && (
+        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm mb-6">
+          <div className="flex justify-between items-center mb-2.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Ventas de Huerta Recientes
+            </span>
+            <span className="text-[10px] text-slate-400">Entregas locales</span>
+          </div>
+
+          <div className="space-y-2">
+            {ventasRecientes.map((v) => (
+              <div
+                key={v.id}
+                className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 text-xs"
+              >
+                <div>
+                  <span className="font-bold text-slate-800 block">{v.clienteNombre}</span>
+                  <span className="text-[11px] text-slate-500">
+                    {v.cantidadKg} kg • <strong className="text-slate-700">{formatCOP(v.totalCop)}</strong>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => compartirReciboWhatsApp(v)}
+                    className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-all"
+                    title="Enviar comprobante por WhatsApp"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleEliminarVenta(v)}
+                    className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-all"
+                    title="Anular venta"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* MODAL COSECHA */}
       {modalType === 'cosecha' && (
