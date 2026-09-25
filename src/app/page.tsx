@@ -7,6 +7,7 @@ import { SiembrasTab } from '../components/SiembrasTab';
 import { BottomNavCultivos, type CultivoTabType } from '../components/BottomNavCultivos';
 import { DocumentacionModal } from '../components/DocumentacionModal';
 import LoginScreen from '../components/LoginScreen';
+import InstallPwaBanner from '../components/InstallPwaBanner';
 import { AuthProvider, useAuth, type AppRoleCultivos } from '../contexts/AuthContext';
 import { seedInitialCultivosData } from '../lib/db';
 import { Sprout, Wifi, WifiOff, BookOpen, Shield, ChevronDown, LogOut } from 'lucide-react';
@@ -54,11 +55,17 @@ function CultivosAppContent() {
   }
 
   if (!user) {
-    return <LoginScreen isOnline={isOnline} />;
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col">
+        <InstallPwaBanner />
+        <LoginScreen isOnline={isOnline} />
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
+      <InstallPwaBanner />
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 py-2.5">
         <div className="max-w-lg mx-auto flex items-center justify-between">
