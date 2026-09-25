@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getSupabaseClient } from '../lib/supabase';
 
 export type AppRoleCultivos = 'administrador' | 'operador_campo';
 
@@ -18,6 +19,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isOperador: boolean;
   loginRapido: (rol: AppRoleCultivos) => void;
+  loginWithGoogle: () => Promise<void>;
   logout: () => void;
 }
 
@@ -47,6 +49,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('cultivos_auth_user', JSON.stringify(defaultAdmin));
     }
     setIsLoading(false);
+
+    // Supabase Auth listener
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          const email = (session.user.email || '').toLowerCase().trim();
+          const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Usuario';
+          const isOwner = email.includes('juanca') || email.includes('alex') || email === 'admin@finca.com';
+          const newUser: AuthUserCultivos = {
+            id: session.user.id,
+            email,
+            name,
+            roles: isOwner ? ['administrador'] : ['operador_campo'],
+            fincaNombre: 'Finca 2.200 msnm',
+          };
+          setUser(newUser);
+          localStorage.setItem('cultivos_auth_user', JSON.stringify(newUser));
+        }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          const email = (session.user.email || '').toLowerCase().trim();
+          const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Usuario';
+          const isOwner = email.includes('juanca') || email.includes('alex') || email === 'admin@finca.com';
+          const newUser: AuthUserCultivos = {
+            id: session.user.id,
+            email,
+            name,
+            roles: isOwner ? ['administrador'] : ['operador_campo'],
+            fincaNombre: 'Finca 2.200 msnm',
+          };
+          setUser(newUser);
+          localStorage.setItem('cultivos_auth_user', JSON.stringify(newUser));
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
   const loginRapido = (rol: AppRoleCultivos) => {
@@ -67,7 +111,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('cultivos_auth_user', JSON.stringify(newUser));
   };
 
-  const logout = () => {
+  const loginWithGoogle = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+      },
+    });
+  };
+
+  const logout = async () => {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setUser(null);
     localStorage.removeItem('cultivos_auth_user');
   };
@@ -83,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isOperador,
         loginRapido,
+        loginWithGoogle,
         logout,
       }}
     >
