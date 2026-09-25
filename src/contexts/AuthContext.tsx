@@ -13,6 +13,13 @@ export interface AuthUserCultivos {
   fincaNombre?: string;
 }
 
+export const AUTHORIZED_EMAILS = [
+  'juanca.arcilav@gmail.com',
+  'alex@alexzapata.com',
+  'admin@finca.com',
+  'admin@granja.com',
+];
+
 interface AuthContextType {
   user: AuthUserCultivos | null;
   isLoading: boolean;
@@ -37,16 +44,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         console.error('Error parseando usuario guardado', e);
       }
-    } else {
-      const defaultAdmin: AuthUserCultivos = {
-        id: 'usr-admin-cultivos',
-        email: 'admin@finca.com',
-        name: 'Administrador Agrícola',
-        roles: ['administrador'],
-        fincaNombre: 'Finca 2.200 msnm',
-      };
-      setUser(defaultAdmin);
-      localStorage.setItem('cultivos_auth_user', JSON.stringify(defaultAdmin));
     }
     setIsLoading(false);
 
@@ -57,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (session?.user) {
           const email = (session.user.email || '').toLowerCase().trim();
           const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Usuario';
-          const isOwner = email.includes('juanca') || email.includes('alex') || email === 'admin@finca.com';
+          const isOwner = AUTHORIZED_EMAILS.includes(email) || email.includes('juanca') || email.includes('alex');
           const newUser: AuthUserCultivos = {
             id: session.user.id,
             email,
@@ -70,11 +67,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        if (session?.user) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          localStorage.removeItem('cultivos_auth_user');
+        } else if (session?.user) {
           const email = (session.user.email || '').toLowerCase().trim();
           const name = session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Usuario';
-          const isOwner = email.includes('juanca') || email.includes('alex') || email === 'admin@finca.com';
+          const isOwner = AUTHORIZED_EMAILS.includes(email) || email.includes('juanca') || email.includes('alex');
           const newUser: AuthUserCultivos = {
             id: session.user.id,
             email,
