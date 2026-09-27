@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cultivos-pwa-v1';
+const CACHE_NAME = 'cultivos-pwa-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.webmanifest',
