@@ -10,7 +10,8 @@ import LoginScreen from '../components/LoginScreen';
 import InstallPwaBanner from '../components/InstallPwaBanner';
 import { AuthProvider, useAuth, type AppRoleCultivos } from '../contexts/AuthContext';
 import { seedInitialCultivosData } from '../lib/db';
-import { Sprout, Wifi, WifiOff, BookOpen, Shield, ChevronDown, LogOut } from 'lucide-react';
+import { sincronizarCultivos, getCultivosSyncStatus, type SyncStatusCultivos } from '../lib/syncService';
+import { Sprout, Wifi, WifiOff, BookOpen, Shield, ChevronDown, LogOut, RefreshCw, Cloud, CloudOff } from 'lucide-react';
 
 function CultivosAppContent() {
   const [activeTab, setActiveTab] = useState<CultivoTabType>('botonera');
@@ -18,8 +19,36 @@ function CultivosAppContent() {
   const [isReady, setIsReady] = useState<boolean>(false);
   const [showDocModal, setShowDocModal] = useState<boolean>(false);
   const [showRoleSelector, setShowRoleSelector] = useState<boolean>(false);
+  const [syncState, setSyncState] = useState<SyncStatusCultivos>(getCultivosSyncStatus());
 
   const { user, isAdmin, isOperador, loginRapido, logout, isLoading } = useAuth();
+
+  useEffect(() => {
+    // Escuchar cambios de estado de sync
+    const handleSyncStatus = (e: any) => {
+      if (e.detail) setSyncState(e.detail);
+    };
+    window.addEventListener('granja-cultivos-sync-status', handleSyncStatus);
+    return () => window.removeEventListener('granja-cultivos-sync-status', handleSyncStatus);
+  }, []);
+
+  useEffect(() => {
+    // Sincronización proactiva en background ante cambios locales
+    let timeoutId: NodeJS.Timeout;
+    const handleDbUpdated = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (navigator.onLine) {
+          sincronizarCultivos().catch(console.error);
+        }
+      }, 1500);
+    };
+    window.addEventListener('granja-cultivos-db-updated', handleDbUpdated);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('granja-cultivos-db-updated', handleDbUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     // Limpieza de hash OAuth en URL
@@ -28,7 +57,10 @@ function CultivosAppContent() {
     }
 
     setIsOnline(navigator.onLine);
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = () => {
+      setIsOnline(true);
+      sincronizarCultivos().catch(console.error);
+    };
     const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
@@ -36,6 +68,9 @@ function CultivosAppContent() {
 
     seedInitialCultivosData().then(() => {
       setIsReady(true);
+      if (navigator.onLine) {
+        sincronizarCultivos().catch(console.error);
+      }
     });
 
     return () => {
@@ -83,7 +118,46 @@ function CultivosAppContent() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Botón e Indicador de Sincronización Supabase */}
+            <button
+              onClick={() => {
+                if (!syncState.isSyncing && isOnline) {
+                  sincronizarCultivos().catch(console.error);
+                }
+              }}
+              disabled={syncState.isSyncing || !isOnline}
+              className={`p-1.5 rounded-xl border flex items-center gap-1 text-[11px] font-bold transition-all ${
+                !isOnline
+                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                  : syncState.isSyncing
+                  ? 'bg-amber-50 text-amber-700 border-amber-300'
+                  : syncState.error
+                  ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+              }`}
+              title={
+                !isOnline
+                  ? 'Sin conexión a internet (Modo Offline)'
+                  : syncState.isSyncing
+                  ? 'Sincronizando con Supabase...'
+                  : syncState.error
+                  ? `Error de sincronización: ${syncState.error}`
+                  : 'Sincronizado con Supabase (Clic para forzar sync)'
+              }
+            >
+              {syncState.isSyncing ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : !isOnline ? (
+                <CloudOff className="w-3.5 h-3.5" />
+              ) : (
+                <Cloud className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {syncState.isSyncing ? 'Sync...' : !isOnline ? 'Offline' : 'Nube'}
+              </span>
+            </button>
+
             {/* Botón de Guía / Documentación */}
             <button
               onClick={() => setShowDocModal(true)}
