@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { dbCultivos, emitCultivosUpdated, type ParcelaCultivo } from '../lib/db';
+import { getSupabaseClient } from '../lib/supabase';
 import { Scissors, ShoppingBag, Sprout, Receipt, Check, X, Sparkles, MessageCircle, Trash2 } from 'lucide-react';
 import { formatCOP } from '../lib/utils';
 import type { VentaCosecha } from '../lib/db';
@@ -31,14 +32,21 @@ export function BotoneraCultivosTab() {
   const [descripcionGasto, setDescripcionGasto] = useState<string>('Jornal deshierbe');
 
   const cargarParcelas = async () => {
-    const list = await dbCultivos.parcelas.where('activo').equals(1).toArray();
+    const todasParcelas = await dbCultivos.parcelas.toArray();
+    const list = todasParcelas.filter((p) => Boolean(p.activo));
     setParcelas(list);
+    if (list.length > 0 && (!selectedParcelaId || !list.some((p) => p.id === selectedParcelaId))) {
+      setSelectedParcelaId(list[0].id);
+    }
     const listVentas = await dbCultivos.ventas.reverse().limit(5).toArray();
     setVentasRecientes(listVentas);
   };
 
   useEffect(() => {
     cargarParcelas();
+    const listener = () => cargarParcelas();
+    window.addEventListener('granja-cultivos-db-updated', listener);
+    return () => window.removeEventListener('granja-cultivos-db-updated', listener);
   }, []);
 
   const notificar = (msg: string) => {
@@ -86,6 +94,14 @@ export function BotoneraCultivosTab() {
   const handleEliminarVenta = async (venta: VentaCosecha) => {
     if (!confirm(`¿Deseas anular la venta de ${venta.cantidadKg} kg a ${venta.clienteNombre}?`)) return;
     await dbCultivos.ventas.delete(venta.id);
+    try {
+      const supabase = getSupabaseClient();
+      if (supabase && navigator.onLine) {
+        await supabase.from('cultivos_ventas').delete().eq('id', venta.id);
+      }
+    } catch (e) {
+      console.warn('Error eliminando venta en Supabase:', e);
+    }
     if (ultimaVenta?.id === venta.id) {
       setUltimaVenta(null);
     }
